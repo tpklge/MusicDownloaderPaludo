@@ -5,6 +5,7 @@ Base audio provider module.
 import logging
 import re
 import shlex
+from contextlib import nullcontext
 from typing import Any, Dict, List, Optional, Tuple
 
 from yt_dlp import YoutubeDL
@@ -19,6 +20,7 @@ from spotdl.utils.formatter import (
     create_song_title,
 )
 from spotdl.utils.matching import get_best_matches, order_results
+from spotdl.utils.request_limiter import RequestLimiter
 
 __all__ = ["AudioProviderError", "AudioProvider", "ISRC_REGEX", "YTDLLogger"]
 
@@ -75,6 +77,7 @@ class AudioProvider:
 
     SUPPORTS_ISRC: bool
     GET_RESULTS_OPTS: List[Dict[str, Any]]
+    request_limiter: Optional[RequestLimiter] = None
 
     def __init__(
         self,
@@ -360,8 +363,12 @@ class AudioProvider:
         if len(best_results) > 1:
             views: List[int] = []
             for best_result in best_results:
-                if best_result[0].views:
+                if best_result[0].views is not None:
                     views.append(best_result[0].views)
+                elif self.request_limiter is not None:
+                    # Ranking candidates should not turn one paced search into
+                    # several additional video extractions just for view counts.
+                    views.append(0)
                 else:
                     views.append(self.get_views(best_result[0].url))
 
@@ -369,7 +376,7 @@ class AudioProvider:
             lowest_views = min(views)
 
             if highest_views in (0, lowest_views):
-                return best_result[0], best_result[1]
+                return best_results[0][0], best_results[0][1]
 
             weighted_results: List[Tuple[Result, float]] = []
             for index, best_result in enumerate(best_results):
@@ -397,7 +404,12 @@ class AudioProvider:
         """
 
         try:
-            data = self.audio_handler.extract_info(url, download=download)
+            with (
+                self.request_limiter.slot(skip_cooldown=True)
+                if self.request_limiter
+                else nullcontext()
+            ):
+                data = self.audio_handler.extract_info(url, download=download)
 
             if data:
                 return data
@@ -406,7 +418,9 @@ class AudioProvider:
                 warn_if_deno_missing()
 
             logger.debug(exception)
-            raise AudioProviderError(f"YT-DLP download error - {url}") from exception
+            raise AudioProviderError(
+                f"YT-DLP download error - {url}: {exception}"
+            ) from exception
 
         raise AudioProviderError(f"No metadata found for the provided url {url}")
 

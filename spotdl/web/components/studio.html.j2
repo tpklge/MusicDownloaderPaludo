@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="pt-BR" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark light">
+  <title>Music Downloader</title>
+  <link rel="icon" href="/assets/favicon.ico">
+  <script>
+    try { document.documentElement.dataset.theme = localStorage.getItem('md-theme') || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'); } catch (_) {}
+  </script>
+  <link rel="stylesheet" href="/assets/studio.css">
+  <script src="/assets/studio.js" defer></script>
+</head>
+<body>
+  <svg class="svg-library" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+    <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 3v12m-5-5 5 5 5-5M4 15v5h16v-5"/></symbol>
+    <symbol id="i-music" viewBox="0 0 24 24"><path d="M9 18V5l11-2v13M9 8l11-2"/><ellipse cx="5.5" cy="18" rx="3.5" ry="3"/><ellipse cx="16.5" cy="16" rx="3.5" ry="3"/></symbol>
+    <symbol id="i-grid" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/></symbol>
+    <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
+    <symbol id="i-settings" viewBox="0 0 24 24"><path d="m9 3-1 3-3 1 1 3-2 2 2 2-1 3 3 1 1 3h6l1-3 3-1-1-3 2-2-2-2 1-3-3-1-1-3Z"/><circle cx="12" cy="12" r="3"/></symbol>
+    <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.5 1.5m11 11L19 19M5 19l1.5-1.5m11-11L19 5"/></symbol>
+    <symbol id="i-moon" viewBox="0 0 24 24"><path d="M20 14A8.5 8.5 0 0 1 10 3a9 9 0 1 0 10 11Z"/></symbol>
+    <symbol id="i-link" viewBox="0 0 24 24"><path d="m10 14 4-4m-6 6-2 2a4 4 0 0 1-6-6l5-5a4 4 0 0 1 6 0m2 2 2-2a4 4 0 0 1 6 6l-5 5a4 4 0 0 1-6 0" transform="translate(1 0)"/></symbol>
+    <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M4 12h16m-6-6 6 6-6 6"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></symbol>
+    <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3 7V4h7l2 3h9v13H3Z"/></symbol>
+    <symbol id="i-video" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="4"/><path d="m10 9 5 3-5 3Z"/></symbol>
+    <symbol id="i-close" viewBox="0 0 24 24"><path d="m6 6 12 12M6 18 18 6"/></symbol>
+  </svg>
+  <a href="#main" class="skip-link">Pular para o conteúdo</a>
+  <aside class="sidebar" aria-label="Menu principal">
+    <a class="brand" href="/" aria-label="Music Downloader, início"><span class="brand-mark"><svg><use href="#i-music"/></svg></span><span>Music<span class="brand-secondary">Downloader</span></span></a>
+    <span class="nav-caption">BIBLIOTECA</span>
+    <nav>
+      <button class="nav-item active" id="nav-home" aria-current="page" aria-label="Visão geral"><svg><use href="#i-grid"/></svg>Visão geral</button>
+      <button class="nav-item" id="nav-queue" aria-label="Downloads"><svg><use href="#i-download"/></svg>Downloads<span class="nav-count" id="nav-count">0</span></button>
+      <button class="nav-item" id="nav-history" aria-label="Histórico"><svg><use href="#i-clock"/></svg>Histórico</button>
+    </nav>
+    <div class="sidebar-bottom">
+      <div class="local-note"><span class="status-dot"></span><div>Seus arquivos, com você<small>Salvos no seu computador</small></div></div>
+      <button class="nav-item" id="settings-button" aria-label="Preferências"><svg><use href="#i-settings"/></svg>Preferências</button>
+      <div class="version">Music Downloader <span>v{{ __version__ }}</span></div>
+    </div>
+  </aside>
+  <div class="workspace">
+    <header class="topbar"><span>Seu espaço de downloads</span><div class="topbar-actions"><span class="connection" id="connection"><span class="status-dot"></span>Conectando…</span><button class="icon-button" id="theme-toggle" aria-label="Alternar tema" title="Alternar tema"><svg><use href="#i-sun"/></svg></button></div></header>
+    <main id="main">
+      <section class="page-heading"><div><p class="eyebrow">SUA MÚSICA. DO SEU JEITO.</p><h1>Tudo o que você gosta.<br><span>Pronto para levar.</span></h1><p class="intro">Vídeos, músicas e playlists em um só lugar.<br>Cole o link, escolha o formato e deixe com a gente.</p></div><div class="heading-decoration" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span><span></span><span></span></div></section>
+
+      <section class="stats" aria-label="Resumo dos downloads">
+        <div class="stat"><span class="stat-icon blue"><svg><use href="#i-download"/></svg></span><div><strong id="stat-active">0</strong><span>Em andamento</span></div></div>
+        <div class="stat"><span class="stat-icon green"><svg><use href="#i-check"/></svg></span><div><strong id="stat-completed">0</strong><span>Concluídos</span></div></div>
+        <div class="stat"><span class="stat-icon purple"><svg><use href="#i-folder"/></svg></span><div><strong id="stat-files">0</strong><span>Arquivos salvos</span></div></div>
+      </section>
+
+      <section class="new-download" id="new-download" aria-labelledby="new-title">
+        <div class="download-form-panel">
+          <div class="section-heading"><span class="panel-icon"><svg><use href="#i-link"/></svg></span><div><h2 id="new-title">Um link. Seu próximo download.</h2><p>Do YouTube ou Spotify direto para sua pasta.</p></div></div>
+          <form id="preview-form">
+            <label for="url">Link do vídeo, música ou playlist</label>
+            <div class="url-row"><input id="url" name="url" type="url" autocomplete="off" placeholder="https://www.youtube.com/watch?v=…" required aria-describedby="url-hint"><button class="button primary" id="preview-button" type="submit">Carregar prévia<svg><use href="#i-arrow"/></svg></button></div>
+            <p class="field-hint" id="url-hint">YouTube: vídeos e playlists · Spotify: músicas, álbuns e playlists</p>
+            <div id="scope-field" class="scope-field" hidden><label for="scope">Este link contém um vídeo e uma playlist</label><select id="scope"><option value="video">Baixar somente este vídeo</option><option value="playlist">Baixar a playlist inteira</option></select></div>
+            <div class="format-row"><div><label for="format">Formato do arquivo</label><select id="format"><option value="mp3">MP3 · Áudio</option><option value="m4a">M4A · Áudio</option><option value="flac">FLAC · Áudio</option><option value="mp4">MP4 · Vídeo + áudio</option></select></div><div id="quality-field"><label for="quality">Qualidade do vídeo</label><select id="quality"><option value="1080">Até 1080p · Full HD</option><option value="720">Até 720p · HD</option><option value="best">Melhor disponível</option></select></div><p class="audio-note" id="audio-note">Áudio MP3 a 192 kbps.<br>A qualidade depende da fonte.</p></div>
+            <p id="form-error" class="error-message" role="alert" hidden></p>
+          </form>
+          <div class="source-tags"><span><i class="youtube-dot"></i>YouTube</span><span><i class="spotify-dot"></i>Spotify</span><span class="thumbnail-note">Prévia por miniatura, sem reprodução</span></div>
+        </div>
+        <aside class="preview-panel" aria-label="Prévia do conteúdo" aria-live="polite">
+          <div id="preview-empty" class="preview-empty"><div class="preview-placeholder"><svg><use href="#i-video"/></svg></div><strong>Seu próximo favorito aparece aqui</strong><p>Cole um link para ver a miniatura<br>e conferir o conteúdo antes de baixar.</p></div>
+          <div id="preview-content" hidden><div class="thumbnail-wrap"><img id="preview-image" alt="Miniatura do conteúdo" referrerpolicy="no-referrer"><span class="thumbnail-fallback" id="preview-fallback" hidden><svg><use href="#i-music"/></svg></span><span class="preview-kind" id="preview-kind"></span></div><div class="preview-info"><span class="preview-source" id="preview-source"></span><h3 id="preview-title"></h3><p id="preview-author"></p><button type="button" class="button primary download-button" id="download-button"><svg><use href="#i-download"/></svg>Adicionar aos downloads</button></div></div>
+        </aside>
+      </section>
+
+      <section class="queue-section" id="queue-section" aria-labelledby="queue-title"><div class="queue-heading"><div><h2 id="queue-title">Seus downloads</h2><p id="queue-description">Acompanhe cada arquivo, do início ao fim.</p></div><div class="filter-tabs" aria-label="Filtrar downloads"><button class="selected" data-filter="all" aria-pressed="true">Todos</button><button data-filter="active" aria-pressed="false">Em andamento</button><button data-filter="history" aria-pressed="false">Finalizados</button></div></div><div id="job-list"></div><div class="empty-state" id="queue-empty"><span class="empty-icon"><svg><use href="#i-download"/></svg></span><h3>Sua fila está pronta para começar</h3><p>Adicione seu primeiro link e seus downloads aparecerão aqui.</p></div></section>
+      <footer class="page-footer"><span><svg><use href="#i-folder"/></svg>Destino: <span id="output-path">Carregando…</span></span><span>Feito para ouvir. E assistir.</span></footer>
+    </main>
+  </div>
+  <dialog id="settings-dialog"><div class="dialog-heading"><h2>Preferências</h2><button class="icon-button" id="close-settings" aria-label="Fechar preferências"><svg><use href="#i-close"/></svg></button></div><label for="theme-select">Aparência</label><select id="theme-select"><option value="dark">Tema escuro</option><option value="light">Tema claro</option></select><h3>Pasta de downloads</h3><p class="output-setting" id="settings-output"></p><p>Os arquivos e o histórico são mantidos ao fechar o programa. Para escolher outra pasta, inicie com a opção <code>--output</code>.</p><h3>Downloads simultâneos</h3><p>Até 2 links por vez. Playlists são processadas em sequência, com até 5 tentativas por item.</p></dialog>
+  <div id="toast" role="status" hidden></div>
+  <span class="sr-only" id="announcer" aria-live="polite"></span>
+  <template id="job-template"><article class="job-card"><div class="job-art"><img alt="" loading="lazy" referrerpolicy="no-referrer"><svg><use href="#i-music"/></svg></div><div class="job-body"><div class="job-top"><h3></h3><span class="job-badge"></span></div><p class="job-meta"></p><progress max="100" value="0"></progress><div class="job-bottom"><p class="job-message"></p><span class="job-percent"></span></div><details class="job-files" hidden><summary>Arquivos salvos</summary><ul></ul></details><details class="job-errors" hidden><summary>Detalhes das falhas</summary><ul></ul></details></div><button class="job-action button secondary" type="button"></button></article></template>
+</body>
+</html>

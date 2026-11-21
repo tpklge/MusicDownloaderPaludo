@@ -9,10 +9,12 @@ import logging
 import re
 import shutil
 import sys
+import tempfile
 import traceback
 from argparse import Namespace
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Type, Union
+from urllib.parse import urlsplit
 
 from yt_dlp.postprocessor.modify_chapters import ModifyChaptersPP
 from yt_dlp.postprocessor.sponsorblock import SponsorBlockPP
@@ -20,7 +22,9 @@ from yt_dlp.postprocessor.sponsorblock import SponsorBlockPP
 from spotdl.download.progress_handler import ProgressHandler
 from spotdl.providers.audio import (
     AudioProvider,
+    AudioProviderError,
     BandCamp,
+    InternetArchive,
     Piped,
     SoundCloud,
     YouTube,
@@ -43,6 +47,7 @@ from spotdl.utils.formatter import create_file_name
 from spotdl.utils.lrc import generate_lrc
 from spotdl.utils.m3u import gen_m3u_files
 from spotdl.utils.metadata import MetadataError, embed_metadata
+from spotdl.utils.request_limiter import RequestLimiter
 from spotdl.utils.search import gather_known_songs, reinit_song, songs_from_albums
 
 __all__ = [
@@ -55,6 +60,7 @@ __all__ = [
 
 AUDIO_PROVIDERS: Dict[str, Type[AudioProvider]] = {
     "youtube": YouTube,
+    "internet-archive": InternetArchive,
     "youtube-music": YouTubeMusic,
     "soundcloud": SoundCloud,
     "bandcamp": BandCamp,
@@ -99,6 +105,8 @@ class Downloader:
         self,
         settings: Optional[Union[DownloaderOptionalOptions, DownloaderOptions]] = None,
         loop: Optional[asyncio.AbstractEventLoop] = None,
+        request_limiter: Optional[RequestLimiter] = None,
+        provider_limiters: Optional[Dict[str, RequestLimiter]] = None,
     ):
         """
         Initialize the Downloader class.
@@ -106,6 +114,8 @@ class Downloader:
         ### Arguments
         - settings: The settings to use.
         - loop: The event loop to use.
+        - request_limiter: Shared pacing for YouTube searches and downloads.
+        - provider_limiters: Separate shared pacing for each audio service.
 
         ### Notes
         - `search-query` uses the same format as `output`.
@@ -123,6 +133,11 @@ class Downloader:
                 Namespace(config=False), dict(settings), DOWNLOADER_OPTIONS
             )  # type: ignore
         )
+        self.request_limiter = request_limiter
+        self.provider_limiters = dict(provider_limiters or {})
+        if request_limiter is not None:
+            for name in ("youtube", "youtube-music", "piped"):
+                self.provider_limiters.setdefault(name, request_limiter)
 
         # Handle deprecated values in config file
         modernize_settings(self.settings)
@@ -211,6 +226,11 @@ class Downloader:
                     yt_dlp_args=self.settings["yt_dlp_args"],
                 )
             )
+
+        for name, provider in zip(
+            self.settings["audio_providers"], self.audio_providers
+        ):
+            provider.request_limiter = self.provider_limiters.get(name)
 
         # Initialize list of errors
         self.errors: List[str] = []
@@ -375,25 +395,129 @@ class Downloader:
         async with self.semaphore:
             return await self.async_search_and_download(song)
 
-    def search(self, song: Song) -> str:
+    def search(
+        self, song: Song, providers: Optional[List[AudioProvider]] = None
+    ) -> str:
         """
         Search for a song using all available providers.
 
         ### Arguments
         - song: The song to search for.
+        - providers: Optional subset to search while attempting one source at a time.
 
         ### Returns
-        - tuple with download url and audio provider if successful.
+        - The first matching download URL, in provider priority order.
         """
 
-        for audio_provider in self.audio_providers:
-            url = audio_provider.search(song, self.settings["only_verified_results"])
+        last_error = None
+        for audio_provider in self.audio_providers if providers is None else providers:
+            try:
+                url = audio_provider.search(
+                    song, self.settings["only_verified_results"]
+                )
+            except Exception as error:
+                last_error = error
+                logger.debug("%s search failed: %s", audio_provider.name, error)
+                continue
             if url:
                 return url
 
             logger.debug("%s failed to find %s", audio_provider.name, song.display_name)
 
-        raise LookupError(f"No results found for song: {song.display_name}")
+        detail = f": {last_error}" if last_error else ""
+        raise LookupError(
+            f"No results found for song: {song.display_name}{detail}"
+        ) from last_error
+
+    @staticmethod
+    def _url_provider(url: str) -> str:
+        """Select service pacing for an explicitly supplied download URL."""
+        host = urlsplit(url).hostname or ""
+        if host == "youtu.be" or host == "youtube.com" or host.endswith(".youtube.com"):
+            return "youtube"
+        if host == "archive.org" or host.endswith(".archive.org"):
+            return "internet-archive"
+        if host == "soundcloud.com" or host.endswith(".soundcloud.com"):
+            return "soundcloud"
+        if host == "piped.video":
+            return "piped"
+        return ""
+
+    async def _download_audio(
+        self, song: Song, tracker, temp_folder: Path
+    ) -> Tuple[Dict, str, AudioProvider]:
+        """Try each configured service through both search and audio download."""
+        loop = asyncio.get_running_loop()
+        candidates = (
+            [(self._url_provider(song.download_url), None)]
+            if song.download_url
+            else list(zip(self.settings["audio_providers"], self.audio_providers))
+        )
+        failures = []
+        last_error = None
+        for index, (name, provider) in enumerate(candidates):
+            audio_downloader = None
+            label = provider.name if provider is not None else name or "URL"
+            try:
+                if provider is not None:
+                    tracker.notify_searching(label)
+                    download_url = await loop.run_in_executor(
+                        None, self.search, song, [provider]
+                    )
+                else:
+                    download_url = str(song.download_url)
+
+                audio_class = Piped if name == "piped" else AudioProvider
+                audio_downloader = audio_class(
+                    output_format=self.settings["format"],
+                    cookie_file=self.settings["cookie_file"],
+                    search_query=self.settings["search_query"],
+                    filter_results=self.settings["filter_results"],
+                    yt_dlp_args=self.settings["yt_dlp_args"],
+                )
+                audio_downloader.request_limiter = self.provider_limiters.get(name)
+                # A failed source's .part file must never be resumed by another source.
+                source_folder = temp_folder / str(index)
+                source_folder.mkdir()
+                audio_downloader.audio_handler.params["outtmpl"]["default"] = str(
+                    source_folder / "%(id)s.%(ext)s"
+                )
+                audio_downloader.audio_handler.add_progress_hook(
+                    tracker.yt_dlp_progress_hook
+                )
+                tracker.notify_getting_meta(label)
+                download_info = await loop.run_in_executor(
+                    None,
+                    lambda: audio_downloader.get_download_metadata(
+                        download_url, download=True
+                    ),
+                )
+                if not download_info or "entries" in download_info:
+                    raise AudioProviderError("Expected one audio file, not a playlist")
+                if name == "soundcloud" and (
+                    download_info.get("is_preview")
+                    or "preview" in str(download_info.get("format_id", "")).lower()
+                ):
+                    raise AudioProviderError(
+                        "SoundCloud returned a preview instead of a full track"
+                    )
+                downloaded = Path(
+                    audio_downloader.audio_handler.prepare_filename(download_info)
+                )
+                if not downloaded.is_file() or downloaded.stat().st_size == 0:
+                    raise AudioProviderError("Audio file is missing or empty")
+                return download_info, download_url, audio_downloader
+            except Exception as error:
+                last_error = error
+                failures.append(f"{label}: {error}")
+                logger.debug(
+                    "%s could not download %s: %s", label, song.display_name, error
+                )
+                if audio_downloader is not None:
+                    audio_downloader.audio_handler.close()
+        raise DownloaderError(
+            "All audio sources failed: " + "; ".join(failures)
+        ) from last_error
 
     def search_lyrics(self, song: Song) -> Optional[str]:
         """
@@ -514,6 +638,8 @@ class Downloader:
         # Initialize the progress tracker
         display_progress_tracker = self.progress_handler.get_new_tracker(song)
 
+        temp_directory = None
+        audio_downloader = None
         try:
             # Create the temp folder path
             temp_folder = get_temp_path()
@@ -681,59 +807,16 @@ class Downloader:
             # Create the output directory if it doesn't exist
             output_file.parent.mkdir(parents=True, exist_ok=True)
 
-            # Initialize audio downloader
-            audio_downloader: Union[AudioProvider, Piped]
-            if self.settings["audio_providers"][0] == "piped":
-                audio_downloader = Piped(
-                    output_format=self.settings["format"],
-                    cookie_file=self.settings["cookie_file"],
-                    search_query=self.settings["search_query"],
-                    filter_results=self.settings["filter_results"],
-                    yt_dlp_args=self.settings["yt_dlp_args"],
-                )
-            else:
-                audio_downloader = AudioProvider(
-                    output_format=self.settings["format"],
-                    cookie_file=self.settings["cookie_file"],
-                    search_query=self.settings["search_query"],
-                    filter_results=self.settings["filter_results"],
-                    yt_dlp_args=self.settings["yt_dlp_args"],
-                )
+            # Isolate intermediate audio even when concurrent songs resolve to
+            # the same YouTube video.
+            temp_directory = tempfile.TemporaryDirectory(dir=temp_folder)
+            temp_folder = Path(temp_directory.name)
 
-            # Add progress hook to the audio provider
-            audio_downloader.audio_handler.add_progress_hook(
-                display_progress_tracker.yt_dlp_progress_hook
+            download_info, download_url, audio_downloader = await self._download_audio(
+                song, display_progress_tracker, temp_folder
             )
-
-            if song.download_url is None:
-                display_progress_tracker.notify_searching()
-                download_url = await loop.run_in_executor(None, self.search, song)
-            else:
-                download_url = song.download_url
-
-            display_progress_tracker.notify_getting_meta()
-
-            logger.debug("Downloading %s using %s", song.display_name, download_url)
-            download_info = await loop.run_in_executor(
-                None,
-                lambda: audio_downloader.get_download_metadata(
-                    download_url, download=True
-                ),
-            )
-
-            if download_info is None:
-                logger.debug(
-                    "No download info found for %s, url: %s",
-                    song.display_name,
-                    download_url,
-                )
-
-                raise DownloaderError(
-                    f"yt-dlp failed to get metadata for: {song.name} - {song.artist}"
-                )
-
             temp_file = Path(
-                temp_folder / f"{download_info['id']}.{download_info['ext']}"
+                audio_downloader.audio_handler.prepare_filename(download_info)
             )
 
             # Copy the downloaded file to the output file
@@ -906,3 +989,8 @@ class Downloader:
                 f"{song.url} - {exception.__class__.__name__}: {exception}"
             )
             return song, None
+        finally:
+            if audio_downloader is not None:
+                audio_downloader.audio_handler.close()
+            if temp_directory is not None:
+                temp_directory.cleanup()

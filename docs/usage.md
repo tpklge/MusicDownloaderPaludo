@@ -220,18 +220,86 @@ spotdl save 'The Weeknd - Blinding Lights' --save-file 'the-weeknd.spotdl'
     spotdl save 'The Weeknd - Blinding Lights' --save-file 'the-weeknd.spotdl' --preload
     ```
 
+## Interface gráfica local (Music Downloader)
+
+Instale o suporte desktop na pasta do projeto:
+
+```bash
+uv sync --extra desktop
+```
+
+Abra `iniciar_interface.command` com dois cliques no macOS ou
+`iniciar_interface.bat` no Windows. Pelo terminal:
+
+```bash
+.venv/bin/python -m spotdl.gui
+```
+
+No Windows, use `.venv\Scripts\python -m spotdl.gui`. Com o pacote instalado,
+o comando `music-downloader` também abre a janela desktop nativa.
+
+- Temas claro e escuro, com a preferência salva no aplicativo.
+- Cole vários links, um por linha. YouTube: vídeos e playlists; Spotify: músicas,
+  álbuns e playlists. A miniatura corresponde ao primeiro link informado.
+- Prévia somente por miniatura, sem player de áudio ou vídeo.
+- MP3, M4A e FLAC para áudio; MP4 para vídeos do YouTube. Escolha até 720p,
+  até 1080p ou a melhor resolução disponível. Para links contendo vídeo e playlist,
+  escolha entre o vídeo individual e a playlist inteira.
+- Cada música aparece em sua própria linha, dentro da coleção, com barra de
+  progresso, estado, etapa atual, worker e tentativa. Velocidade e tempo restante
+  aparecem quando fornecidos pela fonte; valores desconhecidos são exibidos como `—`.
+- Ajuste **Workers** entre 1 e 32 (padrão inicial: 12). O limite é global, compartilhado
+  entre as coleções, e pode mudar durante os downloads. Ao reduzir o limite,
+  os workers em execução terminam sua operação antes de novos itens começarem.
+- **Operações YouTube** controla separadamente a quantidade de operações simultâneas
+  nessa fonte (1–8; padrão: 2). **Intervalo mínimo** controla o espaçamento entre
+  operações. A pausa global após limites do serviço continua sendo respeitada.
+- Configure novas tentativas, espera inicial e bitrate de áudio. O padrão de
+  quatro novas tentativas permite até cinco tentativas por música. A espera cresce
+  entre falhas; músicas nessa espera liberam seus workers para os demais itens.
+- Workers e limites de rede mudam imediatamente. Tentativas, bitrate e cookies
+  são capturados quando um novo link é adicionado à fila.
+- Selecione músicas ou coleções e use **Cancelar selecionados**, **Tentar novamente**
+  ou **Abrir arquivo / pasta**. **Cancelar tudo** mantém os arquivos já concluídos.
+  Uma falha ou o cancelamento de uma música não interrompe o restante da playlist.
+- Use **Escolher pasta…** para definir o destino. Aguarde ou cancele a fila antes de
+  trocar a pasta. Os arquivos e o histórico são permanentes; a preferência de pasta
+  e as opções de download são lembradas na próxima abertura.
+- Use **Selecionar cookies…** para escolher um arquivo Netscape, se o YouTube
+  exigir autenticação. Deixe o campo vazio para não usar cookies.
+
+Também é possível definir opções iniciais pela linha de comando:
+
+```bash
+.venv/bin/python -m spotdl.gui --output "/caminho/Minhas músicas" --workers 8
+.venv/bin/python -m spotdl.gui --cookie-file "/caminho/cookies.txt"
+```
+
+FFmpeg é necessário para conversão e união de áudio e vídeo. O aplicativo usa
+Deno local do spotDL, quando instalado. FLAC preserva o áudio recebido da fonte;
+converter áudio comprimido para FLAC não recupera qualidade perdida.
+
+Downloads interrompidos ao fechar o aplicativo aparecem como cancelados no histórico
+na próxima abertura e podem ser reenviados. O YouTube não depende da inicialização
+ou autenticação do Spotify.
+
 ## Web UI (User Interface)
 
-To start the web UI, run
+A interface web permanece disponível separadamente:
 
 ```bash
 spotdl web
 ```
 
+Ela abre no navegador. A janela desktop iniciada por `python -m spotdl.gui`
+funciona diretamente, sem servidor HTTP local.
+
 ### Download Location
 
-By default, the web UI downloads files to a special directory, to overwrite this behavior
-add option `--web-use-output-dir`, which will make output directory follow `--output`
+The web interface saves files permanently in `downloads/` by default.
+With `spotdl web`, the static directory portion of `--output` is used when supplied.
+The older `/api/download/*` endpoints retain their session directory behavior;
+`--web-use-output-dir` makes those endpoints follow `--output` too.
 
 ## Config file
 
@@ -279,7 +347,9 @@ If you don't want the config to load automatically, change the `load_config` opt
     "use_cache_file": false,
     "use_official_api": false,
     "audio_providers": [
-        "youtube-music"
+        "youtube",
+        "internet-archive",
+        "soundcloud"
     ],
     "lyrics_providers": [
         "genius",
@@ -401,7 +471,7 @@ Main options:
                         You can only use album/playlist/tracks urls when downloading/matching youtube urls.
                         When using youtube url without spotify url, you won't be able to use `--fetch-albums` option.
 
-  --audio [{youtube,youtube-music,soundcloud,bandcamp,piped} ...]
+  --audio [{youtube,internet-archive,youtube-music,soundcloud,bandcamp,piped} ...]
                         The audio provider to use. You can provide more than one for fallback.
   --lyrics [{genius,musixmatch,azlyrics,synced} ...]
                         The lyrics provider to use. You can provide more than one for fallback. Synced lyrics might not work correctly with some music players. For such cases it's better
@@ -530,3 +600,127 @@ Other options:
   --profile             Run in profile mode. Useful for debugging.
   --version, -v         Show the version number and exit.
 ```
+
+## Parallel playlist runner
+
+Run the repository's playlist/album script with 12 workers:
+
+```sh
+python scripts/download_playlists.py \
+  "https://open.spotify.com/playlist/PLAYLIST_ID" \
+  "https://open.spotify.com/album/ALBUM_ID" \
+  --workers 12 --output downloads/playlists
+```
+
+These worker/retry/pacing options belong to `scripts/download_playlists.py`.
+Both the runner and a fresh regular `spotdl` configuration use this source order:
+**YouTube → Internet Archive → SoundCloud**. Existing config files and an explicit
+`--audio` argument can select a different order for the regular command:
+
+```sh
+spotdl download "SPOTIFY_URL" --audio youtube internet-archive soundcloud
+```
+
+YouTube Music remains available explicitly as `youtube-music`.
+
+The script shows songs processed overall, progress per playlist, each worker's
+current stage and attempt, downloaded/existing/failed counts, pending retries,
+and the remaining cooldown for each service. A processed song can be a final
+failure; the counters and final report distinguish it from a successful download.
+The terminal display batches worker events and redraws at most four times per
+second, only when a value or a displayed clock changes. Text columns have stable
+widths, and service rows use static markers instead of animated pulses. Compatible
+terminals receive synchronized frames to avoid showing intermediate erase/redraw
+steps. Retry messages remain in the worker status; final error details are written
+to `download-errors.json` instead of printing through the live display.
+Before scheduling downloads, the script scans every subfolder under `--output`
+for existing MP3, M4A, FLAC, Opus, Ogg and WAV files. It checks the expected output
+path, Spotify track ID/URL, ISRC, exact artist/title tags and the generated
+artist/title filename (ignoring case and equivalent Unicode). Files with
+different known ISRCs are not merged by artist/title or filename. Empty files,
+`.part` downloads and unrelated songs do not advance the playlist's progress.
+Files with unreadable tags can still match by filename; this scan does not
+validate the entire audio stream.
+
+An existing directory is reused, but only songs found locally are skipped; any
+missing songs in that playlist remain queued. A song found in another playlist's
+folder or a different supported format is reused at its existing location,
+without copying or converting it. The initial counters include these local
+matches. An entirely downloaded playlist performs no YouTube search/download.
+The Spotify playlist metadata is still loaded to determine which songs belong
+to it. To search a larger music library, set `--output` to its common root.
+
+Workers check again under shared recording/path locks immediately before each
+download. Newly completed songs are added to the index so repeated songs in
+different playlists are only downloaded once during the same run. Files removed
+after indexing are checked again when looking for a match.
+
+Every attempt searches and tries downloading in order: YouTube, Internet Archive,
+then SoundCloud. The next source is tried when searching finds no suitable match
+or the matched audio cannot be downloaded. Later retries retain this priority
+and search again instead of reusing an unsuccessful attempt's resolved URL.
+An explicitly supplied `song.download_url` continues to select that exact URL.
+
+Internet Archive uses its [search and metadata APIs](https://archive.org/developers/md-read.html),
+inspects at most five item records per search, and selects individual public
+audio files. It first searches the artist/creator field; if no items are found,
+it falls back to a broader text search. Derivative formats of one track are
+grouped so an album or several formats cannot be downloaded as one song.
+Restricted, stream-only and private files are excluded. Candidate matching still
+checks artist, title and duration, so unknown-length files do not become assumed
+matches.
+
+YouTube and SoundCloud searches use flat yt-dlp results to avoid extracting every
+candidate. SoundCloud requires no separate API client initialization before its
+turn; publisher artist tags are preferred over the uploader name. Known previews
+and inaccessible candidates are excluded, and a downloaded preview is rejected.
+With shared pacing enabled, matching uses available search metadata without
+extra view-count lookups.
+Each download has its own
+intermediate directory; writes to the same output path are serialized.
+
+The defaults are:
+
+| Option | Default | Meaning |
+| --- | --- | --- |
+| `--workers` | `12` | Concurrent song processing workers |
+| `--youtube-concurrency` | `2` | Maximum simultaneous YouTube search/download operations |
+| `--request-interval` / `--max-request-interval` | `5` / `10` | Random interval in seconds between YouTube operation starts, shared across workers |
+| `--retries` | `4` | Retries after the initial attempt: **5 total attempts**; minimum 4 retries |
+| `--retry-delay` / `--retry-max-delay` | `15` / `300` | Exponential retry delay in seconds, with up to 20% jitter and the configured cap |
+| `--cooldown` | `120` | Initial YouTube pause after HTTP 403/429 or bot/session limit errors |
+| `--cookie-file` | unset | Optional Netscape cookies file for content requiring authentication |
+
+Retry waits release the song worker. Once the delay expires, the failed song goes
+to the end of the queue, after songs still awaiting their first attempt. The retry
+limit remains unchanged. The shared YouTube limit covers searches,
+metadata lookups and audio extraction/download, while conversion can continue
+outside it. Each operation can contain multiple HTTP requests: yt-dlp additionally
+uses `--sleep-requests 1.5`, a 5–10 second delay before downloading, one fragment
+at a time and a 30 second socket timeout. Its internal network retries are disabled
+so the song queue controls the retry budget and delay.
+
+A detected block pauses new operations for that service across all workers.
+Queued operations notice a new cooldown and move on to the next source without
+issuing another request to the blocked service. YouTube, Internet Archive and
+SoundCloud have separate shared limiters: Archive uses two concurrent operations
+with 1–2 seconds between starts, and SoundCloud uses two with 3–5 seconds between
+starts. Their initial cooldown is 120 seconds. A YouTube cooldown does not stop
+Archive or SoundCloud operations.
+
+Repeated blocks increase the affected service's pause up to 900 seconds. A server
+`Retry-After` value can extend it beyond that cap. Already running operations may
+finish. Limits are shared within one script process; separate simultaneous
+processes do not share them.
+
+The pacing follows the [yt-dlp YouTube guidance](https://github.com/yt-dlp/yt-dlp/wiki/Extractors#this-content-isnt-available-try-again-later)
+and its documented [sleep options](https://github.com/yt-dlp/yt-dlp#workarounds).
+The concurrency and cooldown defaults are conservative application choices, not
+YouTube guarantees. Twelve workers do not mean twelve simultaneous requests, and
+no pacing setting guarantees that YouTube will never block a session or IP.
+
+After each run, `download-errors.json` in the output directory contains the final
+failures, including song, playlist, URL, attempts and error. It is replaced on the
+next run, including with an empty list if there are no failures. The process exits
+with status 1 if any songs still failed, or 0 if all songs succeeded/already existed.
+Run the same command again to retry the failed songs; completed files are skipped.

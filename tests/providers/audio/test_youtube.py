@@ -105,3 +105,73 @@ def test_yt_get_results_normalizes_null_metadata(mocker):
     assert results[0].duration == 0
     assert results[0].author == ""
     assert results[0].views == 0
+
+
+def test_youtube_search_uses_flat_results_and_does_not_extract_each_video(mocker):
+    youtube_dl = mocker.patch("spotdl.providers.audio.youtube.YoutubeDL")
+    youtube_dl.return_value.__enter__.return_value.extract_info.return_value = {
+        "entries": []
+    }
+    provider = YouTube()
+    provider.get_results("artist song")
+    options = youtube_dl.call_args.args[0]
+    assert options["extract_flat"] == "in_playlist"
+    assert options["skip_download"] is True
+    youtube_dl.return_value.__enter__.return_value.extract_info.assert_called_once_with(
+        "ytsearch10:artist song", download=False
+    )
+
+
+def test_zero_views_do_not_generate_additional_metadata_requests(mocker):
+    from spotdl.types.result import Result
+
+    provider = YouTube()
+    get_views = mocker.patch.object(provider, "get_views")
+    best = Result(
+        source="YouTube",
+        url="best",
+        verified=False,
+        name="Song",
+        duration=180,
+        author="Artist",
+        result_id="best",
+        views=0,
+    )
+    other = Result(
+        source="YouTube",
+        url="other",
+        verified=False,
+        name="Song",
+        duration=180,
+        author="Artist",
+        result_id="other",
+        views=0,
+    )
+    result, score = provider.get_best_result({best: 90, other: 85})
+    assert result is best
+    assert score == 90
+    get_views.assert_not_called()
+
+
+def test_paced_matching_does_not_fetch_missing_view_counts(mocker):
+    from spotdl.types.result import Result
+    from spotdl.utils.request_limiter import RequestLimiter
+
+    provider = YouTube()
+    provider.request_limiter = RequestLimiter()
+    get_views = mocker.patch.object(provider, "get_views")
+    results = {
+        Result(
+            source="YouTube",
+            url=f"video{index}",
+            verified=False,
+            name="Song",
+            duration=180,
+            author="Artist",
+            result_id=str(index),
+        ): score
+        for index, score in enumerate((90, 85))
+    }
+    _, score = provider.get_best_result(results)
+    assert score == 90
+    get_views.assert_not_called()

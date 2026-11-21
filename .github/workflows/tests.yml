@@ -37,19 +37,24 @@ jobs:
       - name: Install dependencies
         run: |
           uv venv --python ${{ matrix.python-version }}
-          uv sync
+          uv sync --extra desktop
+
+      - name: Install Qt system libraries
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libegl1 libopengl0
 
       - name: Run tests
         timeout-minutes: 10
         run: |
-          uv run pytest -vvv -m "not live" --record-mode=none --block-network --allowed-hosts=127.0.0.1
+          uv run --extra desktop pytest -vvv -m "not live" --record-mode=none --block-network --allowed-hosts=127.0.0.1
         env:
           PLATFORM: ${{ matrix.platform }}
+          QT_QPA_PLATFORM: offscreen
 
   live:
     # Talks to Spotify, YouTube etc. for real. These services rate limit and
     # bot-check CI runners, so this job is informational only.
-    if: "github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'"
+    if: "(github.event_name == 'schedule' && github.repository == 'spotDL/spotify-downloader') || github.event_name == 'workflow_dispatch'"
     runs-on: ubuntu-latest
     continue-on-error: true
 
@@ -84,7 +89,7 @@ jobs:
 
   matching:
     # Live like the `live` job, so it can be bot-checked too: report, don't block.
-    if: "!contains(github.event.commits[0].message, '[skip ci]')"
+    if: "github.repository == 'spotDL/spotify-downloader' || github.event_name == 'workflow_dispatch'"
     runs-on: "ubuntu-latest"
     continue-on-error: true
 

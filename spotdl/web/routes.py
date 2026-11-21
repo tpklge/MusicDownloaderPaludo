@@ -41,7 +41,7 @@ async def home(request: Request):
     """
     return templates.TemplateResponse(
         request=request,
-        name="home.html.j2",
+        name="studio.html.j2",
         context={"__version__": __version__},
     )
 

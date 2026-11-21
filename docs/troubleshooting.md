@@ -97,6 +97,34 @@ As common issues or questions are encountered solutions will be added to this gu
 
     <https://stackoverflow.com/questions/27835619/urllib-and-ssl-certificate-verify-failed-error>
 
+??? "Invalid TLS CA bundle path after moving the project"
+
+    If an error names `certifi/cacert.pem` under the project's **previous** folder,
+    first check whether the project or its `.venv` was moved. A running Python
+    process can retain the old CA bundle path, and virtual-environment launchers,
+    activation scripts and editable installs can still reference the old location.
+
+    The message `Failed to fetch secrets ... Falling back to default secret` comes
+    from the Spotify client's `spotapi` dependency. The missing local CA file does
+    not by itself indicate a SoundCloud or Internet Archive server problem.
+
+    Stop the affected process. If the old virtual environment is active, run
+    `deactivate`. From the project's **current** folder, rebuild the environment
+    using the locked dependency versions, preserving the old environment as a backup:
+
+    ```bash
+    backup_dir="$(mktemp -d)"
+    mv .venv "$backup_dir/venv"
+    uv sync --frozen
+    source .venv/bin/activate
+    python -c "import certifi, ssl; print(certifi.where()); ssl.create_default_context(cafile=certifi.where())"
+    ```
+
+    Restart the download command from this folder. Music files and playlists are
+    unaffected by rebuilding `.venv`. If `REQUESTS_CA_BUNDLE`, `CURL_CA_BUNDLE` or
+    `SSL_CERT_FILE` are configured, check that their certificate paths still exist.
+    Keep certificate verification enabled; this error requires fixing a local path.
+
 ??? "RecursionError"
 
     <https://github.com/spotDL/spotify-downloader/issues/1493>

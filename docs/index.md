@@ -6,9 +6,21 @@
 !!! ENSURE TO UPDATE LINKS AND REMOVE HTML FORMATTING
 --->
 
-# spotDL v4
+# MusicDownloaderPaludo
 
-**spotDL** finds songs from Spotify playlists on YouTube and downloads them - along with album art, lyrics and metadata.
+Este fork é baseado no [spotDL / spotify-downloader](https://github.com/spotDL/spotify-downloader),
+responsável pelo downloader original de terminal. Créditos aos spotDL Developers
+e colaboradores; a licença MIT original está preservada em
+[LICENSES/spotdl-MIT](https://github.com/tpklge/MusicDownloaderPaludo/blob/main/LICENSES/spotdl-MIT).
+O MusicDownloaderPaludo mantém a licença GPL v3 do repositório.
+
+O [README do projeto](https://github.com/tpklge/MusicDownloaderPaludo#readme)
+contém as instruções de instalação da interface desktop. A documentação abaixo
+inclui as funcionalidades de terminal herdadas do spotDL.
+
+## Base original: spotDL v4
+
+**spotDL** finds songs from Spotify playlists on YouTube, Internet Archive and SoundCloud and downloads them - along with album art, lyrics and metadata.
 
 [![MIT License](https://img.shields.io/github/license/spotdl/spotify-downloader?color=44CC11&style=flat-square)](https://github.com/spotDL/spotify-downloader/blob/master/LICENSE)
 [![PyPI version](https://img.shields.io/pypi/pyversions/spotDL?color=%2344CC11&style=flat-square)](https://pypi.org/project/spotdl/)
@@ -104,6 +116,20 @@ follow these instructions
 
 ## Usage
 
+### Native desktop interface
+
+Install desktop support with `uv sync --extra desktop`, then run
+`.venv/bin/python -m spotdl.gui` (Windows: `.venv\Scripts\python -m spotdl.gui`).
+You can also double-click `iniciar_interface.command` on macOS or
+`iniciar_interface.bat` on Windows.
+
+Music Downloader opens a native desktop window with light and dark themes,
+thumbnail previews, individual song progress bars and 1–32 adjustable workers.
+It downloads YouTube videos/playlists and Spotify music, and keeps files and
+history in your chosen output folder. See the
+[desktop interface guide](usage.md#interface-gráfica-local-music-downloader)
+for download controls, quality choices and cookies.
+
 Using SpotDL without options:
 
 ```sh
@@ -131,14 +157,14 @@ For a list of all **options** use ```spotdl -h```
 
 ## Music Sourcing and Audio Quality
 
-spotDL uses YouTube as a source for music downloads. This method is used to avoid any issues related to downloading music from Spotify.
+spotDL tries YouTube, Internet Archive and SoundCloud in that order by default. It moves to the next source when searching or downloading fails. You can choose providers and their order with `--audio`; existing configuration files retain their selected providers. Audio is downloaded from these sources, with Spotify supplying playlist and song metadata.
 
 > **Note**
 > Users are responsible for their actions and potential legal consequences. We do not support unauthorized downloading of copyrighted material and take no responsibility for user actions.
 
 ### Audio Quality
 
-spotDL downloads music from YouTube and is designed to always download the highest possible bitrate; which is 128 kbps for regular users and 256 kbps for YouTube Music premium users.
+For YouTube sources, spotDL is designed to download the highest possible bitrate; which is 128 kbps for regular users and 256 kbps for YouTube Music premium users.
 
 Check the [Audio Formats](usage.md#audio-formats-and-quality) page for more info.
 

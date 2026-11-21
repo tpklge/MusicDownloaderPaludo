@@ -24,21 +24,21 @@ jobs:
       - name: Install dependencies
         run: |
           uv venv --python 3.11
-          uv sync
+          uv sync --extra desktop
           uv pip install pip
 
       - name: Run Pylint check
         run: |
-          uv run pylint --fail-under 10 --limit-inference-results 0 --disable=R0917 ./spotdl
+          uv run --extra desktop pylint --fail-under 10 --limit-inference-results 0 --disable=R0917 ./spotdl
 
       - name: Run MyPy check
         run: |
-          uv run mypy --ignore-missing-imports --follow-imports silent --install-types --non-interactive ./spotdl
+          uv run --extra desktop mypy --ignore-missing-imports --follow-imports silent --install-types --non-interactive ./spotdl
 
       - name: Run Black check
         run: |
-          uv run black --check ./spotdl
+          uv run --extra desktop black --check ./spotdl
 
       - name: Run isort check
         run: |
-          uv run isort --check --diff ./spotdl
+          uv run --extra desktop isort --check --diff ./spotdl

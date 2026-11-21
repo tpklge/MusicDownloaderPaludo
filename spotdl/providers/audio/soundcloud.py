@@ -1,98 +1,79 @@
-"""
-SoundCloud module for downloading and searching songs.
-"""
+"""Search SoundCloud tracks using yt-dlp without extracting every candidate."""
 
-import logging
-import re
-from itertools import islice
+from contextlib import nullcontext
 from typing import Any, Dict, List
+from urllib.parse import urlsplit
 
-from soundcloud import SoundCloud as SoundCloudClient
-from soundcloud.resource.track import Track
+from yt_dlp import YoutubeDL
 
 from spotdl.providers.audio.base import AudioProvider
 from spotdl.types.result import Result
 
 __all__ = ["SoundCloud"]
 
-logger = logging.getLogger(__name__)
-
 
 class SoundCloud(AudioProvider):
-    """
-    SoundCloud audio provider class
-    """
+    """Search full tracks lazily, using publisher artist tags when available."""
 
     SUPPORTS_ISRC = False
     GET_RESULTS_OPTS: List[Dict[str, Any]] = [{}]
 
-    def __init__(self, *args: Any, **kwargs: Any) -> None:
-        """
-        Initialize the SoundCloud API
-
-        ### Arguments
-        - args: Arguments passed to the `AudioProvider` class.
-        - kwargs: Keyword arguments passed to the `AudioProvider` class.
-        """
-
-        super().__init__(*args, **kwargs)
-        self.client = SoundCloudClient()
-
-    def get_results(self, search_term: str, *_args, **_kwargs) -> List[Result]:
-        """
-        Get results from SoundCloud
-
-        ### Arguments
-        - search_term: The search term to search for.
-        - args: Unused.
-        - kwargs: Unused.
-
-        ### Returns
-        - A list of SoundCloud results if found, None otherwise.
-        """
-
-        results = list(islice(self.client.search(search_term), 20))
-        regex = r"^(.+?)-|(\(\w+[\s\S]*\))"
-        # Because anyone can post on soundcloud, we do another search with an edited search
-        # The regex removes anything in brackets and the artist(s)'s name(s) if in the name
-        edited_search_term = re.sub(regex, "", search_term)
-        results.extend(list(islice(self.client.search(edited_search_term), 20)))
-
-        # Simplify results
-        simplified_results = []
-        for result in results:
-            if not isinstance(result, Track):
+    def get_results(self, search_term: str, **_kwargs: Any) -> List[Result]:
+        """Get at most twenty track candidates from a flat SoundCloud search."""
+        options = {
+            **self.audio_handler.params,
+            "skip_download": True,
+            "extract_flat": "in_playlist",
+        }
+        with (
+            (
+                self.request_limiter.slot(skip_cooldown=True)
+                if self.request_limiter
+                else nullcontext()
+            ),
+            YoutubeDL(options) as handler,
+        ):
+            payload = handler.extract_info(f"scsearch20:{search_term}", download=False)
+        results: Dict[str, Result] = {}
+        for entry in (payload or {}).get("entries") or []:
+            if not isinstance(entry, dict) or not entry.get("id"):
                 continue
-
-            # Ignore results that are not playable
-            if "/preview/" in result.media.transcodings[0].url:
+            url = entry.get("webpage_url") or entry.get("url")
+            if not isinstance(url, str) or urlsplit(url).hostname not in (
+                "soundcloud.com",
+                "www.soundcloud.com",
+                "api.soundcloud.com",
+                "api-v2.soundcloud.com",
+            ):
                 continue
-
-            album = self.client.get_track_albums(result.id)
-
-            try:
-                album_name = next(album).title
-            except StopIteration:
-                album_name = None
-
-            simplified_results.append(
-                Result(
-                    source="soundcloud",
-                    url=result.permalink_url,
-                    name=result.title,
-                    verified=result.user.verified,
-                    # SoundCloud reports duration in milliseconds, but the
-                    # matcher (and every other provider) works in seconds.
-                    duration=result.full_duration / 1000,
-                    author=result.user.username,
-                    artists=(result.user.username,),
-                    result_id=str(result.id),
-                    isrc_search=False,
-                    search_query=search_term,
-                    views=result.playback_count,
-                    explicit=False,
-                    album=album_name,
-                )
+            if entry.get("availability") in (
+                "private",
+                "premium_only",
+                "subscriber_only",
+                "needs_auth",
+            ):
+                continue
+            if (
+                entry.get("is_preview")
+                or "preview" in str(entry.get("format_id", "")).lower()
+            ):
+                continue
+            artists = entry.get("artists") or [
+                entry.get("artist") or entry.get("uploader") or ""
+            ]
+            if isinstance(artists, str):
+                artists = [artists]
+            results[url] = Result(
+                source="soundcloud",
+                url=url,
+                name=entry.get("track") or entry.get("title") or "",
+                verified=bool(entry.get("channel_is_verified")),
+                duration=entry.get("duration") or 0,
+                author=artists[0] if artists else "",
+                artists=tuple(artists),
+                result_id=str(entry["id"]),
+                search_query=search_term,
+                views=entry.get("view_count") or 0,
+                album=entry.get("album"),
             )
-
-        return simplified_results
+        return list(results.values())

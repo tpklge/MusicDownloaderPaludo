@@ -118,7 +118,8 @@ class ProgressTracker:
     Similar to Rich Progress but without any TUI elements.
     """
 
-    songs: Dict[str, ClientSongDownload] = {}
+    def __init__(self) -> None:
+        self.songs: Dict[str, ClientSongDownload] = {}
 
     def add(self, song: Song):
         """
@@ -207,6 +208,7 @@ class ProgressHandler:
                 BarColumn(bar_width=None, finished_style="green"),
                 "[progress.percentage]{task.percentage:>3.0f}%",
                 TimeRemainingColumn(),
+                refresh_per_second=4,
                 # Normally when you exit the progress context manager (or call stop())
                 # the last refreshed display remains in the terminal with the cursor on
                 # the following line. You can also make the progress display disappear on
@@ -336,6 +338,7 @@ class SongTracker:
         self.old_progress: int = 0
         self.status = ""
         self.path: Optional[str] = None
+        self.provider: Optional[str] = None
 
         self.parent.progress_tracker.add(self.song)
         if not self.parent.simple_tui:
@@ -377,9 +380,6 @@ class SongTracker:
                 message=message,
                 completed=self.progress,
             )
-
-            # Refresh the progress bar to show the changes before it gets removed in case of 100%
-            self.parent.rich_progress_bar.refresh()
 
             # If task is complete
             if self.progress == 100 or message == "Error":
@@ -430,21 +430,23 @@ class SongTracker:
         else:
             logger.error("%s: %s", traceback.__class__.__name__, traceback)
 
-    def notify_searching(self) -> None:
+    def notify_searching(self, provider: Optional[str] = None) -> None:
         """
         Notifies the progress handler that the song is being searched for on the audio provider(s).
         """
 
         self.progress = 25
-        self.update("Searching for song")
+        self.provider = provider
+        self.update("Searching for song" + (f": {provider}" if provider else ""))
 
-    def notify_getting_meta(self) -> None:
+    def notify_getting_meta(self, provider: Optional[str] = None) -> None:
         """
         Notifies the progress handler that the song's download metadata is being downloaded.
         """
 
         self.progress = 40
-        self.update("Getting audio meta")
+        self.provider = provider
+        self.update("Getting audio meta" + (f": {provider}" if provider else ""))
 
     def notify_conversion_complete(self, status="Embedding metadata") -> None:
         """
@@ -487,7 +489,11 @@ class SongTracker:
         - progress: The progress to update to.
         """
 
-        if self.parent.simple_tui and not self.parent.web_ui:
+        if (
+            self.parent.simple_tui
+            and not self.parent.web_ui
+            and not self.parent.update_callback
+        ):
             self.progress = 70
         else:
             self.progress = 70 + int(progress * 0.25)
@@ -508,7 +514,11 @@ class SongTracker:
                 file_bytes = data.get("total_bytes_estimate")
 
             downloaded_bytes = data.get("downloaded_bytes")
-            if self.parent.simple_tui and not self.parent.web_ui:
+            if (
+                self.parent.simple_tui
+                and not self.parent.web_ui
+                and not self.parent.update_callback
+            ):
                 self.progress = 70
             elif file_bytes and downloaded_bytes:
                 self.progress = 40 + downloaded_bytes / file_bytes * 30

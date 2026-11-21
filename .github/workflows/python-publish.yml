@@ -10,6 +10,7 @@ on:
 
 jobs:
   deploy:
+    if: github.repository == 'spotDL/spotify-downloader'
     runs-on: ubuntu-latest
     environment: release
     permissions:
@@ -48,6 +49,7 @@ jobs:
         uses: pypa/gh-action-pypi-publish@release/v1
 
   build:
+    if: github.repository == 'spotDL/spotify-downloader'
     strategy:
       fail-fast: false
       matrix:
@@ -88,6 +90,7 @@ jobs:
             spotDL
 
   build-arm:
+    if: github.repository == 'spotDL/spotify-downloader'
     runs-on: ubuntu-latest
     name: Build on ubuntu-latest aarch64
     steps:

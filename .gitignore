@@ -145,3 +145,14 @@ temp/
 # VS Code
 .vscode
 *.txt
+
+# Local files and download state
+.DS_Store
+.AppleDouble
+._*
+.env.*
+*.mp4
+*.part
+*.ytdl
+.interface-history.json
+.interface-history.tmp

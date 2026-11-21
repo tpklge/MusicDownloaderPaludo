@@ -2,6 +2,7 @@
 YouTube module for downloading and searching songs using yt-dlp.
 """
 
+from contextlib import nullcontext
 from typing import Any, Dict, List
 
 from yt_dlp import YoutubeDL
@@ -35,9 +36,17 @@ class YouTube(AudioProvider):
         search_opts: Dict[str, Any] = {
             **self.audio_handler.params,
             "skip_download": True,
+            "extract_flat": "in_playlist",
         }
 
-        with YoutubeDL(search_opts) as ydl:
+        with (
+            (
+                self.request_limiter.slot(skip_cooldown=True)
+                if self.request_limiter
+                else nullcontext()
+            ),
+            YoutubeDL(search_opts) as ydl,
+        ):
             info = ydl.extract_info(f"ytsearch10:{search_term}", download=False)
 
         if not info or "entries" not in info:

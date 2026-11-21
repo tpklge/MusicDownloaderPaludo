@@ -4,6 +4,7 @@ YTMusic module for downloading and searching songs.
 
 import logging
 import re
+from contextlib import nullcontext
 from typing import Any, Dict, List
 
 from ytmusicapi import YTMusic
@@ -92,7 +93,12 @@ class YouTubeMusic(AudioProvider):
         #     kwargs["filter"] = "songs"
 
         for attempt in range(self.SEARCH_ATTEMPTS):
-            search_results = self.client.search(search_term, **kwargs)
+            with (
+                self.request_limiter.slot(skip_cooldown=True)
+                if self.request_limiter
+                else nullcontext()
+            ):
+                search_results = self.client.search(search_term, **kwargs)
 
             # Simplify results
             results = []

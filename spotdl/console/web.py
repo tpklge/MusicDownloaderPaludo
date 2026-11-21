@@ -4,6 +4,7 @@ Web module for the console.
 
 import asyncio
 import logging
+import os
 import shutil
 import signal
 import sys
@@ -25,14 +26,19 @@ from spotdl.utils.web import (
     fix_mime_types,
     get_current_state,
 )
-from spotdl.web import api, routes
+from spotdl.web import api, gui_api, routes
 
 __all__ = ["web"]
 
 logger = logging.getLogger(__name__)
 
 
-def web(web_settings: WebOptions, downloader_settings: DownloaderOptions):
+def web(
+    web_settings: WebOptions,
+    downloader_settings: DownloaderOptions,
+    media_output: Path | None = None,
+    open_browser: bool = True,
+):
     """
     Run the web server.
 
@@ -73,6 +79,21 @@ def web(web_settings: WebOptions, downloader_settings: DownloaderOptions):
 
     app_state.api.include_router(api.router)
     app_state.api.include_router(routes.router)
+    app_state.api.include_router(gui_api.router)
+    if media_output is None:
+        prefix = downloader_settings["output"].split("{", 1)[0]
+        if prefix:
+            media_output = Path(prefix)
+            if not prefix.endswith(("/", os.sep)):
+                media_output = media_output.parent
+        else:
+            media_output = Path.cwd() / "downloads"
+    app_state.api.state.media_output = media_output
+
+    @app_state.api.on_event("shutdown")
+    def close_media_queue():
+        if hasattr(app_state.api.state, "media_manager"):
+            app_state.api.state.media_manager.close()
 
     # Add the CORS middleware
     app_state.api.add_middleware(
@@ -115,7 +136,8 @@ def web(web_settings: WebOptions, downloader_settings: DownloaderOptions):
     app_state.downloader_settings = downloader_settings
 
     # Open the web browser
-    webbrowser.open(f"{protocol}://{web_settings['host']}:{web_settings['port']}/")
+    if open_browser:
+        webbrowser.open(f"{protocol}://{web_settings['host']}:{web_settings['port']}/")
 
     if not web_settings["web_use_output_dir"]:
         logger.info(
