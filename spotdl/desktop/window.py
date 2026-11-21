@@ -87,8 +87,10 @@ class ProgressDelegate(QStyledItemDelegate):
         progress_option.progress = int(index.data(Qt.ItemDataRole.UserRole) or 0)
         progress_option.text = f"{progress_option.progress}%"
         progress_option.textVisible = True
+        progress_option.textAlignment = Qt.AlignmentFlag.AlignCenter
         progress_option.palette = option.palette
-        progress_option.state = option.state
+        # Item-view state does not include the orientation flag required by Qt 6.
+        progress_option.state = option.state | QStyle.StateFlag.State_Horizontal
         QApplication.style().drawControl(
             QStyle.ControlElement.CE_ProgressBar, progress_option, painter
         )
@@ -290,6 +292,7 @@ class MainWindow(QMainWindow):
         toolbar.addWidget(self.filter_combo)
         queue_panel.addLayout(toolbar)
         self.overall = QProgressBar()
+        self.overall.setOrientation(Qt.Orientation.Horizontal)
         self.overall.setAccessibleName("Progresso geral das músicas")
         self.overall.setValue(0)
         queue_panel.addWidget(self.overall)

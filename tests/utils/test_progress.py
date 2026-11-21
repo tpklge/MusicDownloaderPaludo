@@ -13,11 +13,12 @@ BEGIN_FRAME = "\033[?2026h"
 END_FRAME = "\033[?2026l"
 
 
-def make_progress(now, terminal=True):
+def make_progress(now, terminal=True, legacy_windows=False):
     stream = StringIO()
     console = Console(
         file=stream,
         force_terminal=terminal,
+        legacy_windows=legacy_windows,
         color_system=None,
         width=120,
         _environ={"TERM": "xterm-256color"},
@@ -101,6 +102,16 @@ def test_synchronized_output_is_closed_even_when_rendering_fails():
 
 def test_nonterminal_output_does_not_emit_synchronized_terminal_codes():
     progress, stream = make_progress([0.0], terminal=False)
+    with progress:
+        progress.add_task("Worker")
+        progress.draw(force=True)
+    assert "Worker" in stream.getvalue()
+    assert BEGIN_FRAME not in stream.getvalue()
+    assert END_FRAME not in stream.getvalue()
+
+
+def test_legacy_windows_output_does_not_emit_synchronized_terminal_codes():
+    progress, stream = make_progress([0.0], legacy_windows=True)
     with progress:
         progress.add_task("Worker")
         progress.draw(force=True)

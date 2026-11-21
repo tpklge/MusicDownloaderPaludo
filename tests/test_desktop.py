@@ -9,12 +9,13 @@ pytest.importorskip(
 )
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtCore import QCoreApplication, QEvent, QSettings, Qt
+from PySide6.QtCore import QCoreApplication, QEvent, QRect, QSettings, Qt
+from PySide6.QtGui import QPainter, QPixmap, QStandardItemModel
 from PySide6.QtTest import QTest
-from PySide6.QtWidgets import QApplication, QPushButton
+from PySide6.QtWidgets import QApplication, QPushButton, QStyle, QStyleOptionViewItem
 
 from spotdl.desktop.bootstrap import prepare_qt_plugins
-from spotdl.desktop.window import MainWindow
+from spotdl.desktop.window import MainWindow, ProgressDelegate
 
 QT_APPLICATION = None
 
@@ -129,3 +130,31 @@ def test_preview_response_cannot_overwrite_newer_link(window):
     window.refresh()
     assert window.preview is None
     assert window.preview_title.text() != "Stale response"
+
+
+@pytest.mark.parametrize("theme", ["dark", "light"])
+@pytest.mark.parametrize("value", [25, 75])
+def test_song_progress_fills_horizontally(window, app, theme, value):
+    """Check the rendered fill direction when table cells omit orientation flags."""
+    window._theme(theme)
+    model = QStandardItemModel(1, 1)
+    index = model.index(0, 0)
+    model.setData(index, value, Qt.ItemDataRole.UserRole)
+    option = QStyleOptionViewItem()
+    option.rect = QRect(0, 0, 200, 40)
+    option.palette = app.palette()
+    option.state = QStyle.StateFlag.State_Enabled
+    image = QPixmap(200, 40)
+    image.fill(app.palette().base().color())
+    painter = QPainter(image)
+    try:
+        ProgressDelegate(window.tree).paint(painter, option, index)
+    finally:
+        painter.end()
+    pixels = image.toImage()
+    # Sample above the text, checking that the fill ends at the expected X.
+    assert pixels.pixelColor(20, 20) != pixels.pixelColor(180, 20)
+    boundary = 5 + round(190 * value / 100)
+    assert pixels.pixelColor(boundary - 8, 14) == pixels.pixelColor(20, 14)
+    assert pixels.pixelColor(boundary + 8, 14) == pixels.pixelColor(180, 14)
+    assert window.overall.orientation() == Qt.Orientation.Horizontal
